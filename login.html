@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login with Ethereum Signature</title>
+    <!-- <script type='module' src="https://cdn.jsdelivr.net/npm/ethers@6.13.3/dist/ethers.min.js"></script> -->
+</head>
+
+<body>
+    <h2>Login to Element with Ethereum Signature</h2>
+    <button id="loginButton">Login</button>
+    <pre id="output"></pre>
+
+    <script type='module'>
+        import * as ethers from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.esm.min.js'
+        const apiKey = 'ysBokbA3gKUzt61DmeHWjTFYZ07CGPQL';
+        const apiSign = '9aa86550328c65ef1ad5a535126fb2cbf4393487484c6f19aa8b34e3fa82a694.7319.1719389446';
+
+        // Function to connect to MetaMask, get the user's address, and sign the login message
+        async function login() {
+            if (typeof window.ethereum !== 'undefined') {
+                const provider = new ethers.providers.Web3Provider(window.ethereum);
+                const signer = provider.getSigner();
+
+                try {
+                    // Request account access
+                    await provider.send('eth_requestAccounts', []);
+                    const accountAddress = await signer.getAddress();
+
+                    // Step 1: Get Nonce
+                    const nonce = await getNonce(accountAddress);
+
+                    // Step 2: Generate Message and Sign it
+                    const message = generateLoginMessage(accountAddress, nonce);
+                    const signature = await signer.signMessage(message);
+
+                    // Step 3: Send the signed message to authenticate and get the token
+                    const token = await loginAuth(accountAddress, message, signature);
+                    document.getElementById('output').innerHTML = `Access Token: ${token}`;
+                } catch (error) {
+                    console.error('Error:', error);
+                    document.getElementById('output').innerText = `Error: ${error.message}`;
+                }
+            } else {
+                alert('Please install MetaMask!');
+            }
+        }
+
+        // Step 1: Get Nonce for the account
+        async function getNonce(accountAddress) {
+            const query = `
+        query GetNonce($address: Address!, $chain: Chain!, $chainId: ChainId!) {
+          user(identity: { address: $address, blockChain: { chain: $chain, chainId: $chainId } }) {
+            nonce
+          }
+        }`;
+
+            const variables = {
+                address: accountAddress.toLowerCase(),
+                chain: 'eth',
+                chainId: '0xaa36a7',
+            };
+
+            const response = await fetch('https://api-test.element.market/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'origin': 'https://element.market',
+                    'referer': 'https://element.market/',
+                    'x-api-key': apiKey,
+                    'x-api-sign': apiSign,
+                },
+                body: JSON.stringify({
+                    query: query,
+                    variables: variables,
+                }),
+            });
+
+            const data = await response.json();
+            const nonce = data.data.user.nonce;
+            return nonce;
+        }
+
+        // Step 2: Generate login message
+        function generateLoginMessage(address, nonce) {
+            return `Welcome to Element!\n   \nClick "Sign" to sign in. No password needed!\n   \nI accept the Element Terms of Service: \n https://element.market/tos\n   \nWallet address:\n${address.toLowerCase()}\n   \nNonce:\n${nonce}`;
+        }
+
+        // Step 3: Login authentication
+        async function loginAuth(accountAddress, message, signature) {
+            const mutation = `
+        mutation LoginAuth($identity: IdentityInput!, $message: String!, $signature: String!, $realm: String, $source: String) {
+          auth {
+            login(input: { identity: $identity, message: $message, signature: $signature, realm: $realm, source: $source }) {
+              token
+            }
+          }
+        }`;
+
+            const variables = {
+                identity: {
+                    address: accountAddress.toLowerCase(),
+                    blockChain: {
+                        chain: 'eth',
+                        chainId: '0xaa36a7',
+                    },
+                },
+                message: message,
+                signature: signature,
+            };
+
+            const response = await fetch('https://api-test.element.market/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'origin': 'https://element.market',
+                    'referer': 'https://element.market/',
+                    'x-api-key': apiKey,
+                    'x-api-sign': apiSign,
+                },
+                body: JSON.stringify({
+                    query: mutation,
+                    variables: variables,
+                }),
+            });
+
+            const data = await response.json();
+            const token = data.data.auth.login.token;
+            return token;
+        }
+
+        // Add event listener for login button
+        document.getElementById('loginButton').addEventListener('click', login);
+    </script>
+</body>
+
+</html>
